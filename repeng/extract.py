@@ -300,6 +300,8 @@ def read_representations(
     directions: dict[int, np.ndarray] = {}
     for layer in tqdm.tqdm(hidden_layers):
         h = layer_hiddens[layer]
+        if isinstance(h, torch.Tensor):
+            h = h.detach().to("cpu", dtype=torch.float32).numpy()
         assert h.shape[0] == len(inputs) * 2
 
         if method == "pca_diff":

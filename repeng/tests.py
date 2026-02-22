@@ -2,6 +2,7 @@ import functools
 import json
 import pathlib
 import tempfile
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -9,7 +10,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenize
 
 from . import ControlModel, ControlVector, DatasetEntry
 from .control import model_layer_list
-from .extract import batched_get_hiddens
+from .extract import batched_get_hiddens, read_representations
 
 
 @pytest.mark.slow
@@ -214,6 +215,60 @@ def test_attention_type_dummy_qwen():
     assert model_layer_list(model)[15].attention_type == "full_attention"
 
     model.forward(input_ids=torch.tensor([[0]], dtype=torch.long))
+
+
+def test_pca_input_type_is_numpy():
+    import torch
+    # Setup
+    class MockConfig:
+        model_type = "mock"
+        num_hidden_layers = 1
+
+    class MockModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.config = MockConfig()
+            self.repeng_layers = torch.nn.ModuleList([torch.nn.Linear(1, 1)]) # Dummy layer
+
+        @property
+        def device(self):
+            return torch.device("cpu")
+
+    model = MockModel()
+    tokenizer = MagicMock()
+    dataset = [DatasetEntry(positive="pos", negative="neg")]
+
+    # Compute hiddens returns Tensors
+    def compute_hiddens(*args, **kwargs):
+        # 2 examples (pos, neg), 1 layer
+        # Shape: (2, 10)
+        return {
+            0: torch.randn(2, 10, dtype=torch.float32)
+        }
+
+    # Patch PCA
+    with patch("repeng.extract.PCA") as MockPCA:
+        mock_pca_instance = MockPCA.return_value
+        mock_pca_instance.fit.return_value = mock_pca_instance
+        # We need components_ to be set for read_representations to work
+        # shape: (n_components, n_features) = (1, 10)
+        mock_pca_instance.components_ = np.random.randn(1, 10).astype(np.float32)
+
+        read_representations(
+            model,
+            tokenizer,
+            dataset,
+            hidden_layers=[0],
+            compute_hiddens=compute_hiddens
+        )
+
+        # check what fit was called with
+        args, _ = mock_pca_instance.fit.call_args
+        fitted_data = args[0]
+
+        # Assert it is numpy array
+        assert isinstance(fitted_data, np.ndarray), f"PCA.fit should receive numpy array, not {type(fitted_data)}"
+        assert fitted_data.dtype == np.float32, f"PCA.fit should receive float32 data, got {fitted_data.dtype}"
 
 
 ################################################################################
