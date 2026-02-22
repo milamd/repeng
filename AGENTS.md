@@ -1,57 +1,105 @@
 # Instructions for Agents
 
-This document outlines the development workflow and standards for the `repeng` repository.
+## Persona
+You are a Principal AI Engineer with deep expertise in Python, PyTorch, Transformers, and Machine Learning. You specialize in Representation Engineering (RepEng) and understand the intricacies of steering Large Language Models (LLMs) using control vectors. You are meticulous, prioritize code quality, and follow best practices for Python development.
 
-## Environment Setup
+## Cached Prefix
 
-This project uses `uv` for dependency management.
+This project, `repeng`, is a library for training and applying control vectors to steer LLM behavior.
+*   **Core Concept**: Control vectors represent directions in the activation space that correspond to specific concepts (e.g., honesty, happiness).
+*   **Mechanism**: `ControlModel` wraps a Hugging Face `PreTrainedModel` and injects these vectors into the hidden states during the forward pass.
+*   **Critical Warning**: `ControlModel` **mutates** the underlying model by replacing layers with `ControlModule`. Always be aware of this side effect. Use `.unwrap()` to restore the original model.
+*   **Key Dependencies**: `torch`, `transformers`, `scikit-learn`, `numpy`, `sae` (optional).
+*   **Tooling**: `uv` for dependency management and task running, `ruff` for linting/formatting, `pytest` for testing.
 
-1.  **Install dependencies**:
-    ```bash
-    uv sync
-    ```
+## Development Workflow
 
-## Testing
+### Environment Setup
+Use `uv` to manage the environment and dependencies.
+```bash
+uv sync
+```
 
-Tests are located in `tests.py` and potentially other files matching `test_*.py`.
-
-1.  **Run tests**:
+### Testing
+Tests are located in `repeng/tests.py`.
+*   **Run all tests**:
     ```bash
     uv run pytest
     ```
-
-2.  **Running slow tests**:
-    Some tests are marked as slow. By default, you might skip them or run them explicitly depending on your needs. Check `pyproject.toml` for markers.
-    To run all tests including slow ones:
+*   **Run fast tests only**:
     ```bash
-    uv run pytest -m "slow or not slow"
+    uv run pytest -m "not slow"
     ```
-    (Or simply `uv run pytest` if no default exclusion is configured in `pyproject.toml`, but check the config.)
+*   **Run specific test file**:
+    ```bash
+    uv run pytest repeng/tests.py
+    ```
+*   **Note**: Many tests load models (GPT-2, TinyStories) and may require significant memory/compute. Use `@pytest.mark.slow` for resource-intensive tests.
 
-## Linting and Formatting
-
-This project uses `ruff` for linting and formatting.
-
-1.  **Check linting**:
+### Linting and Formatting
+Strictly adhere to the project's code style using `ruff`.
+*   **Check linting**:
     ```bash
     uv run ruff check .
     ```
-
-2.  **Format code**:
+*   **Format code**:
     ```bash
     uv run ruff format .
     ```
 
-## Project Structure
+## Project Structure & Key Components
 
--   `repeng/control.py`: Contains `ControlModel` and `ControlModule` classes which wrap Hugging Face models to apply control vectors.
--   `repeng/extract.py`: Contains `ControlVector` class and `read_representations` function for training vectors.
--   `repeng/saes.py`: Contains utilities for loading and using Sparse Autoencoders (SAEs).
--   `repeng/tests.py`: Contains the test suite.
+### `repeng/control.py`
+*   **`ControlModel`**: The main wrapper class.
+    *   `__init__`: Takes a `model` and `layer_ids`. Replaces specified layers with `ControlModule`.
+    *   `set_control`: Applies a `ControlVector` with a given coefficient (strength).
+    *   `reset`: Removes control.
+    *   `unwrap`: Restores the original model structure.
+*   **`ControlModule`**: A custom `nn.Module` that wraps a transformer layer to add the control vector to the output.
+    *   Supports normalization (`normalize=True`) to maintain activation magnitude.
+    *   Supports custom operators (default is addition).
+
+### `repeng/extract.py`
+*   **`ControlVector`**: Represents the learned direction.
+    *   `train`: Class method to train a vector using PCA on contrastive datasets.
+    *   `train_with_sae`: Class method to train using Sparse Autoencoders (SAEs).
+    *   `export_gguf`: Exports the vector to GGUF format for use with `llama.cpp`.
+    *   Supports arithmetic operations (`+`, `-`, `*`, `/`) to combine or scale vectors.
+*   **`DatasetEntry`**: Dataclass `(positive: str, negative: str)` defining contrastive pairs.
+*   **`read_representations`**: Helper function to extract hidden states and compute directions (PCA or UMAP).
+
+### `repeng/saes.py`
+*   Utilities for loading and using Sparse Autoencoders (currently supports EleutherAI format).
 
 ## Coding Standards
 
--   Follow existing code style.
--   Ensure all new features have corresponding tests.
--   Write clear docstrings for public classes and methods.
--   When modifying `ControlModel`, be aware that it mutates the underlying model. Ensure `unwrap` works correctly.
+1.  **Type Hinting**: All function signatures and class attributes must be fully type-hinted. Use `typing.Iterable`, `typing.Callable`, etc.
+2.  **Docstrings**: All public classes and methods must have clear docstrings explaining arguments, return values, and side effects (especially mutation).
+3.  **Imports**: Group imports: standard library first, then third-party, then local.
+4.  **Path Handling**: Use `pathlib.Path` for file system operations.
+5.  **Model Mutation**: Explicitly document and handle the fact that `ControlModel` modifies the passed model instance in-place.
+6.  **Layer Indexing**: Support negative indexing for layers (e.g., `-1` for the last layer), converting them to positive indices internally.
+
+## Common Tasks & Snippets
+
+### Training a Control Vector
+```python
+dataset = [
+    DatasetEntry(positive="Act happy", negative="Act sad"),
+    # ...
+]
+vector = ControlVector.train(model, tokenizer, dataset)
+```
+
+### Applying Control
+```python
+wrapped_model = ControlModel(base_model, layer_ids=range(-5, -1))
+wrapped_model.set_control(vector, coeff=1.5)
+# ... generate ...
+wrapped_model.reset()
+```
+
+### Exporting to GGUF
+```python
+vector.export_gguf("path/to/vector.gguf")
+```
