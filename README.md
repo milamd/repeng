@@ -10,6 +10,20 @@ Train a vector in less than sixty seconds!
 
 _For a full example, see the notebooks folder or [the blog post](https://vgel.me/posts/representation-engineering)._
 
+## Installation
+
+```bash
+pip install repeng
+```
+
+To use the new SAE integration features, you'll also need the `sae` library (and its dependencies):
+
+```bash
+pip install sae
+```
+
+## Example
+
 ```python
 import json
 import torch
@@ -61,7 +75,21 @@ for strength in (-2.2, 1, 2.2):
 > "Our TV show is a wild ride through a world of vibrant colors, mesmerizing patterns, and psychedelic adventures that will transport you to a realm beyond your wildest dreams."
 >
 > strength=2.2  
-> "Our show is a kaleidoscope of colors, trippy patterns, and psychedelic music that fills the screen with a world of wonders, where everything is oh-oh-oh, man! ��psy����������oodle����psy��oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
+> "Our show is a kaleidoscope of colors, trippy patterns, and psychedelic music that fills the screen with a world of wonders, where everything is oh-oh-oh, man! psyoodlepsyoooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
+
+## SAE Integration
+
+You can now train control vectors using Sparse Autoencoders (SAEs) for potentially cleaner directions.
+
+```python
+from repeng.saes import from_eleuther
+
+# Load an SAE (requires 'sae' library)
+sae = from_eleuther("EleutherAI/sae-gpt2-small-hook-z-32k")
+
+# Train with SAE
+vector = ControlVector.train_with_sae(model, tokenizer, sae, dataset)
+```
 
 For a more detailed explanation of how the library works and what it can do, see [the blog post](https://vgel.me/posts/representation-engineering).
 
